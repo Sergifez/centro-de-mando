@@ -69,3 +69,8 @@ Reaplicar ajustes de sesión al arrancar (touchpad, teclado, DPMS, temperatura d
   (`gh-releases-zsync` vía API de GitHub, o `zsync|URL` comparando `Length`); descarga a `.nombre.part`, comprueba
   que sea ELF y solo entonces sustituye (la versión vieja va a la papelera y se reescriben los `.desktop`).
   «Traer las dispersas…» mueve los AppImage de otras carpetas (ignora puntos de montaje como ~/Drive).
+- **Menú de las AppImage:** el botón «Añadir al menú…» lee el `.desktop` y el icono del propio AppImage
+  (`--appimage-extract`, sin ejecutarlo), deja elegir nombre y **sección** (Oficina, Desarrollo, Gráficos, Internet,
+  Juegos, Sistema, Multimedia, Utilidades, Ajustes, Ciencia) y crea `~/.local/share/applications/appimage-*.desktop`
+  con una única categoría. Con entrada ya creada, el botón pasa a «Menú…» para cambiarla o quitarla.
+  Para que el menú de Openbox las muestre, `obamenu` (dotfiles) lee también `~/.local/share/applications`.

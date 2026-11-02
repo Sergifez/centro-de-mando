@@ -7,13 +7,15 @@ import re
 import shutil
 import struct
 import subprocess
+import tempfile
 import urllib.request
 from urllib.parse import urljoin
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QIcon
-from PyQt6.QtWidgets import (QDialog, QFileDialog, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-                             QMessageBox, QPushButton, QScrollArea, QVBoxLayout, QWidget)
+from PyQt6.QtWidgets import (QComboBox, QDialog, QFileDialog, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
+                             QListWidget, QListWidgetItem, QMessageBox, QPushButton, QScrollArea, QVBoxLayout,
+                             QWidget)
 
 APPS_DIR = os.path.expanduser("~/Applications")
 DESKTOP_DIR = os.path.expanduser("~/.local/share/applications")
@@ -227,6 +229,133 @@ def scattered():
     return sorted(found)
 
 
+
+# ------------------------------------------------------------ entrada de menú
+# (categoría freedesktop, nombre en el menú de Openbox, nombre en español) — las que entiende obamenu
+SECTIONS = [("Office", "Office", "Oficina"), ("Development", "Development", "Desarrollo"),
+            ("Graphics", "Graphics", "Gráficos"), ("Network", "Internet", "Internet"), ("Game", "Games", "Juegos"),
+            ("System", "System", "Sistema"), ("AudioVideo", "Multimedia", "Multimedia"),
+            ("Utility", "Utilities", "Utilidades"), ("Settings", "Settings", "Ajustes"), ("Science", "Science", "Ciencia")]
+ALIASES = {"Audio": "AudioVideo", "Video": "AudioVideo", "Electronics": "Science", "Education": "Science",
+           "Math": "Science", "TextEditor": "Utility", "Viewer": "Office", "Player": "AudioVideo"}
+ICON_DIR = os.path.expanduser("~/.local/share/icons/hicolor")
+
+
+def guess_section(cats):
+    known = {c for c, _m, _e in SECTIONS}
+    for c in cats:
+        c = ALIASES.get(c, c)
+        if c in known:
+            return c
+    return "Utility"
+
+
+def slug(path):
+    return re.sub(r"[^a-z0-9]+", "-", pretty_name(path).lower()).strip("-") or "app"
+
+
+def read_meta(path):
+    """Extrae del AppImage su .desktop y su icono (sin ejecutarlo). → dict(name, cats, icon_file)."""
+    meta = {"name": pretty_name(path), "cats": [], "icon_file": ""}
+    with tempfile.TemporaryDirectory(prefix="appimg-") as tmp:
+        def extract(pattern):
+            try:
+                subprocess.run([path, "--appimage-extract", pattern], cwd=tmp, capture_output=True, timeout=90)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        extract("*.desktop")
+        root = os.path.join(tmp, "squashfs-root")
+        found = sorted(f for f in os.listdir(root) if f.endswith(".desktop")) if os.path.isdir(root) else []
+        icon = ""
+        if found:
+            text = open(os.path.join(root, found[0]), encoding="utf-8", errors="replace").read()
+            meta["name"] = desktop_field(text, "Name") or meta["name"]
+            meta["cats"] = [c for c in desktop_field(text, "Categories").split(";") if c]
+            icon = desktop_field(text, "Icon")
+        for cand in ([icon + ".png", icon + ".svg"] if icon else []) + [".DirIcon"]:
+            extract(cand)
+            f = os.path.realpath(os.path.join(root, cand)) if os.path.isdir(root) else ""
+            if f.startswith(os.path.realpath(root) + os.sep) and os.path.isfile(f):
+                ext = ".svg" if f.lower().endswith(".svg") else ".png"
+                dest = os.path.join(tempfile.gettempdir(), f"appimg-icon-{slug(path)}{ext}")
+                shutil.copy2(f, dest)
+                meta["icon_file"] = dest
+                break
+    return meta
+
+
+def install_icon(src, name):
+    if not src or not os.path.isfile(src):
+        return ""
+    ext = os.path.splitext(src)[1]
+    d = os.path.join(ICON_DIR, "scalable" if ext == ".svg" else "256x256", "apps")
+    os.makedirs(d, exist_ok=True)
+    shutil.copy2(src, os.path.join(d, name + ext))
+    return name
+
+
+def write_launcher(path, name, section, icon_file="", desktop=None):
+    """Crea (o actualiza) el .desktop del AppImage con una sola categoría: así aparece en una única sección."""
+    os.makedirs(DESKTOP_DIR, exist_ok=True)
+    if desktop:  # existente: solo cambia nombre y sección
+        text = open(desktop, encoding="utf-8").read()
+        text = re.sub(r"^Name=.*$", lambda _m: f"Name={name}", text, count=1, flags=re.M)
+        if re.search(r"^Categories=", text, re.M):
+            text = re.sub(r"^Categories=.*$", lambda _m: f"Categories={section};", text, count=1, flags=re.M)
+        else:
+            text = text.replace("[Desktop Entry]\n", f"[Desktop Entry]\nCategories={section};\n", 1)
+        open(desktop, "w", encoding="utf-8").write(text)
+        return desktop
+    ident = "appimage-" + slug(path)
+    icon = install_icon(icon_file, ident)
+    desktop = os.path.join(DESKTOP_DIR, ident + ".desktop")
+    with open(desktop, "w", encoding="utf-8") as f:
+        f.write("[Desktop Entry]\nType=Application\n" f"Name={name}\nExec=\"{path}\"\n"
+                f"Icon={icon}\nTerminal=false\nCategories={section};\nComment=AppImage ({os.path.basename(path)})\n")
+    return desktop
+
+
+class MenuDialog(QDialog):
+    """Elegir nombre y sección del menú para un AppImage."""
+
+    def __init__(self, parent, name, section, existing=False):
+        super().__init__(parent)
+        self.setWindowTitle("Sección del menú" if existing else "Añadir al menú")
+        self.resize(420, 10)
+        self.remove = False
+        form = QFormLayout(self)
+        self.name = QLineEdit(name)
+        form.addRow("Nombre en el menú", self.name)
+        self.combo = QComboBox()
+        for cat, menu, es in SECTIONS:
+            self.combo.addItem(f"{es}  ({menu})", cat)
+        self.combo.setCurrentIndex(max(0, [c for c, _m, _e in SECTIONS].index(section)))
+        form.addRow("Sección", self.combo)
+        note = QLabel("Aparece en Menú ▸ Applications ▸ la sección elegida.")
+        note.setObjectName("muted")
+        form.addRow(note)
+        row = QHBoxLayout()
+        if existing:
+            rm = QPushButton("Quitar del menú")
+            rm.clicked.connect(self._remove)
+            row.addWidget(rm)
+        ok, no = QPushButton("Guardar"), QPushButton("Cancelar")
+        ok.setObjectName("primary")
+        ok.clicked.connect(self.accept)
+        no.clicked.connect(self.reject)
+        row.addStretch(1)
+        row.addWidget(no)
+        row.addWidget(ok)
+        form.addRow(row)
+
+    def _remove(self):
+        self.remove = True
+        self.accept()
+
+    def section(self):
+        return self.combo.currentData()
+
+
 # ------------------------------------------------------------------- diálogo
 class AdoptDialog(QDialog):
     def __init__(self, parent, paths):
@@ -368,7 +497,7 @@ class AppsPage(QWidget):
         t = QLabel(name + (f"  ·  {v}" if v else ""))
         t.setObjectName("rowtitle")
         sub = QLabel(f"{os.path.basename(path)}  ·  {human(os.path.getsize(path))}"
-                     + ("  ·  en el menú" if d else "  ·  sin entrada de menú"))
+                     + (f"  ·  menú: {self._section_label(text)}" if d else "  ·  sin entrada de menú"))
         sub.setObjectName("muted")
         col.addWidget(t)
         col.addWidget(sub)
@@ -384,10 +513,13 @@ class AppsPage(QWidget):
         upd = QPushButton("Actualizar" if self.state.get(path, {}).get("state") == "nueva" else "Comprobar")
         upd.setEnabled(path not in self.busy)
         upd.clicked.connect(lambda _c=False, p=path: self.update_one(p))
+        mn = QPushButton("Menú…" if d else "Añadir al menú…")
+        mn.setEnabled(path not in self.busy)
+        mn.clicked.connect(lambda _c=False, p=path: self.menu_entry(p))
         rm = QPushButton("Eliminar")
         rm.setEnabled(path not in self.busy)
         rm.clicked.connect(lambda _c=False, p=path: self.remove(p))
-        for b in (run, upd, rm):
+        for b in (run, upd, mn, rm):
             lay.addWidget(b)
         return card
 
@@ -481,6 +613,45 @@ class AppsPage(QWidget):
         except OSError as e:
             QMessageBox.warning(self, "No se pudo eliminar", str(e))
         self.state.pop(path, None)
+        self.refresh()
+
+    @staticmethod
+    def _section_label(text):
+        cats = [c for c in desktop_field(text, "Categories").split(";") if c]
+        sec = guess_section(cats) if cats else ""
+        return next((es for c, _m, es in SECTIONS if c == sec), "sin sección")
+
+    def menu_entry(self, path):
+        existing = next(iter(desktop_for(path)), None)
+        if existing:
+            text = open(existing, encoding="utf-8", errors="replace").read()
+            cats = [c for c in desktop_field(text, "Categories").split(";") if c]
+            self._menu_dialog(path, desktop_field(text, "Name") or pretty_name(path), guess_section(cats),
+                              existing, "")
+        else:  # primera vez: leer nombre, categorías e icono del propio AppImage
+            self._start(path, lambda _emit: read_meta(path), "Leyendo el AppImage…", self._meta_ready)
+
+    def _meta_ready(self, path, meta):
+        if meta.get("state") == "error":
+            meta = {"name": pretty_name(path), "cats": [], "icon_file": ""}
+        self._menu_dialog(path, meta["name"], guess_section(meta["cats"]), None, meta["icon_file"])
+
+    def _menu_dialog(self, path, name, section, existing, icon_file):
+        d = MenuDialog(self, name, section, existing=bool(existing))
+        if not d.exec():
+            return
+        try:
+            if d.remove:
+                trash(existing)
+                self.log(f"✓ {pretty_name(path)} quitada del menú")
+            else:
+                write_launcher(path, d.name.text().strip() or name, d.section(), icon_file, existing)
+                sec = next(m for c, m, _e in SECTIONS if c == d.section())
+                self.log(f"✓ {d.name.text().strip() or name} en el menú, sección {sec}")
+        except OSError as e:
+            QMessageBox.warning(self, "No se pudo guardar", str(e))
+        if icon_file and os.path.exists(icon_file):
+            os.unlink(icon_file)  # copia temporal de read_meta
         self.refresh()
 
     def add(self):
