@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (QMessageBox, QAbstractButton, QApplication, QComboB
                              QSystemTrayIcon, QMenu, QVBoxLayout, QWidget, QHeaderView)
 
 import dash
+import notify
 import pages
 import settings as cfg
 
@@ -707,6 +708,7 @@ class Window(QMainWindow):
         self._update_buttons()
         self._quitting = False
         self._tray_setup()
+        self.alerts = notify.Alerts(self._sample, self)
         self.log("Centro de mando iniciado")
 
     # ------------------------------------------------------------- bandeja
@@ -721,10 +723,20 @@ class Window(QMainWindow):
         a_open.triggered.connect(self.bring_up)
         a_sum = QAction(ic("utilities-system-monitor", "applications-system"), "Ir al Resumen", menu)
         a_sum.triggered.connect(lambda: (self.side.setCurrentRow(0), self.bring_up()))
+        a_notify = QAction("Avisos de escritorio", menu)
+        a_notify.setCheckable(True)
+        a_notify.setChecked(notify.enabled())
+        a_notify.toggled.connect(notify.set_enabled)
+        a_test = QAction("Probar un aviso", menu)
+        a_test.triggered.connect(lambda: notify.send("Centro de mando", "Los avisos de escritorio funcionan.",
+                                                     "low", "dialog-information", 6000))
         a_quit = QAction(ic("system-shutdown", "application-exit", "window-close"), "Salir", menu)
         a_quit.triggered.connect(self._quit)
         for a in (a_open, a_sum):
             menu.addAction(a)
+        menu.addSeparator()
+        menu.addAction(a_notify)
+        menu.addAction(a_test)
         menu.addSeparator()
         menu.addAction(a_quit)
         self._tray_menu = menu  # referencia viva
@@ -732,6 +744,17 @@ class Window(QMainWindow):
         self.tray.activated.connect(lambda r: self.toggle_visible() if r == QSystemTrayIcon.ActivationReason.Trigger else None)
         self.tray.show()
         self._tray_tip()
+
+    @staticmethod
+    def _sample():
+        """Lectura ligera para los avisos de escritorio."""
+        import shutil
+        bat = next((f"/sys/class/power_supply/{d}/" for d in sorted(os.listdir("/sys/class/power_supply"))
+                    if d.startswith("BAT")), None)
+        cap = cfg.read(bat + "capacity") if bat else ""
+        du = shutil.disk_usage("/")
+        return {"cap": int(cap) if cap.isdigit() else None, "status": cfg.read(bat + "status") if bat else "",
+                "temp": _cpu_temp(), "disk": du.used * 100 // du.total}
 
     def _tray_tip(self):
         if self.tray:

@@ -74,3 +74,8 @@ Reaplicar ajustes de sesión al arrancar (touchpad, teclado, DPMS, temperatura d
   Juegos, Sistema, Multimedia, Utilidades, Ajustes, Ciencia) y crea `~/.local/share/applications/appimage-*.desktop`
   con una única categoría. Con entrada ya creada, el botón pasa a «Menú…» para cambiarla o quitarla.
   Para que el menú de Openbox las muestre, `obamenu` (dotfiles) lee también `~/.local/share/applications`.
+- **Avisos de escritorio** (`notify.py`, vía `notify-send`/xfce4-notifyd, con el panel residente en la bandeja):
+  batería baja (≤20 %) y crítica (≤10 %) descargando, CPU ≥85 °C, disco raíz ≥90 % y AppImage con versión nueva.
+  Cada aviso salta una vez y se rearma al normalizarse (histéresis). Las AppImage se comprueban 90 s tras arrancar
+  y cada 12 h; el resultado se guarda en `~/.config/panel-portatil/app-updates.json`, así la página Apps lo
+  recuerda al reabrir. Interruptor «Avisos de escritorio» y «Probar un aviso» en el menú de la bandeja.

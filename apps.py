@@ -20,6 +20,20 @@ from PyQt6.QtWidgets import (QComboBox, QDialog, QFileDialog, QFormLayout, QFram
 APPS_DIR = os.path.expanduser("~/Applications")
 DESKTOP_DIR = os.path.expanduser("~/.local/share/applications")
 UA = {"User-Agent": "centro-de-mando/1.0"}
+APP_CACHE = os.path.expanduser("~/.config/panel-portatil/app-updates.json")
+
+
+def load_cache():
+    """Último resultado de comprobar actualizaciones: {ruta: resultado, '_told': [avisos ya enviados]}."""
+    try:
+        return json.load(open(APP_CACHE))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_cache(c):
+    os.makedirs(os.path.dirname(APP_CACHE), exist_ok=True)
+    json.dump(c, open(APP_CACHE, "w"), indent=1)
 
 
 # ----------------------------------------------------------------- utilidades
@@ -441,7 +455,9 @@ class AppsPage(QWidget):
     def __init__(self, win=None):
         super().__init__()
         self.win = win
-        self.state = {}      # ruta → resultado de la última comprobación
+        # ruta → resultado de la última comprobación (se recupera de la caché al abrir el panel)
+        self.state = {p: r for p, r in load_cache().items() if p != "_told" and os.path.exists(p)
+                      and r.get("state") in ("nueva", "al-dia")}
         self.busy = {}       # ruta → texto mientras se comprueba/descarga
         self.threads = []
         self.labels = {}
@@ -613,13 +629,22 @@ class AppsPage(QWidget):
         else:
             self._start(path, lambda _emit: check_update(path), "Comprobando…", self._checked)
 
+    def _persist(self):
+        cache = load_cache()
+        told = cache.get("_told", [])
+        cache = {p: r for p, r in self.state.items() if r.get("state") in ("nueva", "al-dia")}
+        cache["_told"] = told
+        save_cache(cache)
+
     def _checked(self, path, res):
         self.state[path] = res
+        self._persist()
 
     def _updated(self, path, res):
         if res["state"] == "hecho":
             self.state.pop(path, None)
             self.state[res["path"]] = {"state": "hecho"}
+            self._persist()
             self.log(f"✓ {pretty_name(res['path'])} actualizada")
         else:
             self.state[path] = res
