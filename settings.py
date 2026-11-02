@@ -549,6 +549,7 @@ CATEGORIES = [
     ("ventanas", "Ventanas", "PERSONALIZACIÓN", "❐"),
     ("arranque", "Arranque", "PERSONALIZACIÓN", "⏻"),
     ("atajos", "Atajos", "PERSONALIZACIÓN", "⌘"),
+    ("archivos", "Archivos", "PERSONALIZACIÓN", "✎"),
     ("servicios", "Servicios", "SISTEMA", "⚙"),
     ("sistema", "Sistema", "SISTEMA", "▤"),
     ("actualizaciones", "Actualizaciones", "SISTEMA", "⟳"),

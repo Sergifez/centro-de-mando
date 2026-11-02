@@ -50,6 +50,8 @@ Perfiles que cambian varios ajustes a la vez: **Ahorro**, **Equilibrado** y **Re
 - **Arranque:** qué programas se lanzan al iniciar sesión. Interruptores sencillos, sin editar el archivo a mano.
 - **Atajos:** lista de los atajos de Openbox. Puedes **añadir**, **cambiar la tecla** (se captura pulsando la combinación) y **eliminar**. Cada cambio guarda una copia de seguridad y recarga Openbox.
 
+- **Archivos:** abre en tu editor de texto los archivos de configuración de tint2, conky, picom, Openbox, rofi, GTK, terminator y `.bashrc`. Elige el editor (Automático usa el primero que haya instalado) y, tras guardar, pulsa **Recargar** en el grupo para que la herramienta lea los cambios. Los archivos que son enlaces a `~/dotfiles` se marcan, y ahí git guarda el historial.
+
 Antes de tocar `rc.xml`, `autostart`, `picom.conf`, tint2 o conky el panel guarda una copia en `~/.config/panel-portatil/backups/`.
 
 ## Sistema

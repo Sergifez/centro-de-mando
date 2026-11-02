@@ -888,4 +888,4 @@ class HelpPage(QWidget):
             self.view.verticalScrollBar().setValue(max(0, top - 6))
 
 
-PAGES = {"actualizaciones": UpdatesPage, "disco": DiskPage, "bateria": BatteryPage, "procesos": ProcessPage, "atajos": ShortcutsPage, "dotfiles": DotfilesPage, "ayuda": HelpPage, "apps": __import__("apps").AppsPage}
+PAGES = {"actualizaciones": UpdatesPage, "disco": DiskPage, "bateria": BatteryPage, "procesos": ProcessPage, "atajos": ShortcutsPage, "dotfiles": DotfilesPage, "ayuda": HelpPage, "archivos": __import__("configs").ConfigPage, "apps": __import__("apps").AppsPage}

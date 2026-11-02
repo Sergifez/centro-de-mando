@@ -60,6 +60,7 @@ Desinstalar: `./install.sh --uninstall`.
 | `settings.py` | Clase `S` (un ajuste) y todas las categorías en `build()` / `CATEGORIES` |
 | `pages.py` | Páginas de información: Batería, Procesos, Atajos, Disco, Actualizaciones, Dotfiles, Ayuda |
 | `apps.py` | Gestor de AppImage: escaneo, actualización, menú, papelera |
+| `configs.py` | Página Archivos: abrir en el editor los archivos de configuración y recargar la herramienta |
 | `dash.py` | Widgets gráficos del Resumen (`Gauge`, `AreaChart`, `Bar`) |
 | `notify.py` | Avisos de escritorio con histéresis y comprobación periódica de AppImage |
 | `deskcfg.py` | Edición segura de autostart, picom, rc.xml, tint2 y conky (con copia de seguridad) |
