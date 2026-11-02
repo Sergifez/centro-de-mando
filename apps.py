@@ -207,6 +207,17 @@ def download_update(path, upd, emit):
             rewrite_desktops(path, new_path)
             trash(path)  # la versión anterior queda en la papelera
         else:
+            # mismo nombre: se guarda la versión actual en la papelera (enlace duro → sin copiar 800 MB)
+            keep = tempfile.mkdtemp(prefix=".old-", dir=os.path.dirname(path))
+            try:
+                bak = os.path.join(keep, os.path.basename(path))
+                try:
+                    os.link(path, bak)
+                except OSError:
+                    shutil.copy2(path, bak)
+                trash(bak)
+            finally:
+                shutil.rmtree(keep, ignore_errors=True)
             os.replace(part, new_path)
     finally:
         if os.path.exists(part):
