@@ -70,7 +70,8 @@ class BatteryPage(LivePage):
         _header(outer, "Batería", "Estado y desgaste de la batería, leído directamente del sistema.")
         self.tiles = {}
         names = ["Salud", "Carga", "Estado", "Capacidad actual", "Capacidad de fábrica", "Consumo",
-                 "Autonomía estimada", "Voltaje", "Modelo"]
+                 "Autonomía estimada", "Voltaje", "Modelo (sistema)", "Referencia de recambio",
+                 "Fabricante · celdas", "Portátil"]
         grid = QVBoxLayout()
         grid.setSpacing(10)
         for i in range(0, len(names), 3):
@@ -108,6 +109,13 @@ class BatteryPage(LivePage):
         status = read(f"{b}/status")
         health = full / design * 100 if design else 0
         wh = lambda x: f"{x / 1e6:.1f} Wh"
+        model = read(f"{b}/model_name")
+        maker = {"ANYO": "Sanyo"}.get(read(f"{b}/manufacturer"), read(f"{b}/manufacturer"))
+        laptop = read("/sys/class/dmi/id/product_version") or read("/sys/class/dmi/id/product_name")
+        vendor = read("/sys/class/dmi/id/sys_vendor").upper()
+        # Lenovo recorta la «L» inicial de su referencia (L15S4A01 → 15S4A01)
+        ref = ("L" + model if vendor == "LENOVO" and model[:1].isdigit() else model)
+        vdes = _num(b, "voltage_min_design")
         if power > 0 and status == "Discharging":
             mins = now / power * 60
             eta = f"{int(mins // 60)} h {int(mins % 60):02d} min"
@@ -122,7 +130,10 @@ class BatteryPage(LivePage):
                        "Not charging": "Sin cargar"}.get(status, status),
             "Capacidad actual": wh(full), "Capacidad de fábrica": wh(design),
             "Consumo": f"{power / 1e6:.1f} W" if power else "—", "Autonomía estimada": eta,
-            "Voltaje": f"{volt / 1e6:.2f} V", "Modelo": read(f"{b}/model_name", "—"),
+            "Voltaje": f"{volt / 1e6:.2f} V", "Modelo (sistema)": read(f"{b}/model_name", "—"),
+            "Referencia de recambio": ref or "—",
+            "Fabricante · celdas": " · ".join(x for x in (maker, read(f"{b}/technology")) if x) or "—",
+            "Portátil": laptop or "—",
         }
         for k, v in vals.items():
             self.tiles[k].setText(v)
@@ -135,6 +146,10 @@ class BatteryPage(LivePage):
             self.note.setText(f"Salud de la batería: {health:.0f} %. Tiene algo de desgaste.")
         else:
             self.note.setText(f"Salud de la batería: {health:.0f} %. En buen estado.")
+        if ref and vdes and design:
+            self.note.setText(self.note.text() + f"\n\nPara comprar una igual busca «batería {laptop} {ref}» "
+                              f"({vdes / 1e6:.1f} V, {design / 1e6:.1f} Wh). Comprueba que la ficha mencione tu "
+                              "modelo y el mismo voltaje, y contrasta la referencia con la etiqueta de la batería.")
 
 
 # -------------------------------------------------------------------- procesos

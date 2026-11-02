@@ -36,7 +36,7 @@ Perfiles que cambian varios ajustes a la vez: **Ahorro**, **Equilibrado** y **Re
 - **Pantalla:** brillo, compositor, temperatura de color y resolución.
 - **Audio:** volumen, silenciar salida o micrófono, y accesos al mezclador.
 - **Entrada:** touchpad (tocar para clic, desplazamiento natural, velocidad) y distribución de teclado.
-- **Batería:** salud real de la celda (capacidad actual frente a la de fábrica), consumo, voltaje y autonomía estimada.
+- **Batería:** salud real de la celda (capacidad actual frente a la de fábrica), consumo, voltaje y autonomía estimada. También muestra el modelo, la **referencia de recambio** (p. ej. `L15S4A01`), el fabricante y el portátil, con una nota sobre qué buscar para comprar una igual.
 
 ## Conectividad
 
