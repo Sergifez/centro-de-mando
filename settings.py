@@ -553,6 +553,7 @@ CATEGORIES = [
     ("actualizaciones", "Actualizaciones", "SISTEMA", "⟳"),
     ("disco", "Disco", "SISTEMA", "◙"),
     ("procesos", "Procesos", "SISTEMA", "≣"),
+    ("dotfiles", "Dotfiles", "SISTEMA", "⎇"),
 ]
 
 GOVS = [("powersave", "Ahorro (powersave)"), ("performance", "Rendimiento (performance)")]

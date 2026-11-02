@@ -7,12 +7,14 @@ import time
 import unicodedata
 
 from PyQt6.QtCore import QPropertyAnimation, QRectF, Qt, QThread, QTimer, pyqtProperty, pyqtSignal
-from PyQt6.QtGui import QColor, QIcon, QKeySequence, QPainter, QShortcut
+from PyQt6.QtGui import QAction, QColor, QIcon, QKeySequence, QPainter, QShortcut
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import (QMessageBox, QAbstractButton, QApplication, QComboBox, QDialog, QFrame, QHBoxLayout,
                              QLabel, QLineEdit, QListWidget, QPlainTextEdit, QGridLayout, QListWidgetItem, QMainWindow, QPushButton,
                              QScrollArea, QSlider, QStackedWidget, QTableWidget, QTableWidgetItem,
-                             QVBoxLayout, QWidget, QHeaderView)
+                             QSystemTrayIcon, QMenu, QVBoxLayout, QWidget, QHeaderView)
 
+import dash
 import pages
 import settings as cfg
 
@@ -26,6 +28,8 @@ QListWidget#side::item:selected { background: #142136; color: #ffffff; border-le
 QListWidget#side::item:hover:!selected { background: #131c2a; }
 QLabel#brand { color: #e8eef3; font-weight: bold; font-size: 15px; letter-spacing: 1px; }
 QLabel#logo { color: #3aa8e0; font-size: 20px; }
+QLineEdit, QKeySequenceEdit { background: #0f141b; border: 1px solid #1f2a3a; border-radius: 6px; padding: 5px 8px; }
+QLineEdit:focus { border: 1px solid #3aa8e0; }
 QLineEdit#search { background: #0f141b; border: 1px solid #1a2230; border-radius: 8px; padding: 6px 12px; min-width: 260px; }
 QLineEdit#search:focus { border: 1px solid #3aa8e0; }
 QLabel#h1 { font-size: 20px; font-weight: bold; color: #f0f4f8; }
@@ -57,6 +61,11 @@ QScrollBar::handle:vertical { background: #243044; border-radius: 4px; min-heigh
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
 QPlainTextEdit#console { background: #0f151c; border: 1px solid #1a2230; border-radius: 8px; color: #9fb3c8;
     font-family: 'DejaVu Sans Mono',monospace; font-size: 11px; padding: 4px; }
+QListWidget { background: #0d131b; border: 1px solid #172030; border-radius: 8px; padding: 4px; }
+QListWidget::item { padding: 3px 6px; }
+QListWidget::item:selected { background: #142136; color: #ffffff; }
+QListWidget::indicator { margin-right: 8px; width: 14px; height: 14px; border: 1px solid #3a4a60; border-radius: 3px; background: #0b0f14; }
+QListWidget::indicator:checked { background: #3aa8e0; border-color: #3aa8e0; }
 QTableWidget::item:selected { background: #142136; color: #ffffff; }
 QTableWidget { background: #0d131b; border: 1px solid #172030; gridline-color: #172030; }
 QHeaderView::section { background: #10151f; border: none; padding: 4px; }
@@ -321,71 +330,131 @@ def _uptime():
     return f"{s // 3600} h {s % 3600 // 60} min"
 
 
+def _cpu_times():
+    f = cfg.read("/proc/stat").splitlines()[0].split()[1:]
+    v = [int(x) for x in f]
+    return sum(v), v[3] + v[4]  # total, idle+iowait
+
+
+def _net_bytes():
+    rx = tx = 0
+    for line in cfg.read("/proc/net/dev").splitlines()[2:]:
+        name, _, rest = line.partition(":")
+        if name.strip() == "lo":
+            continue
+        c = rest.split()
+        rx += int(c[0])
+        tx += int(c[8])
+    return rx, tx
+
+
+def _ram_frac():
+    m = {}
+    for line in cfg.read("/proc/meminfo").splitlines():
+        k, v = line.split(":", 1)
+        m[k] = int(v.split()[0])
+    return (m["MemTotal"] - m["MemAvailable"]) / m["MemTotal"] * 100
+
+
 class Summary(QWidget):
     def __init__(self):
         super().__init__()
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(28, 22, 28, 12)
+        outer.setContentsMargins(28, 18, 28, 10)
+        outer.setSpacing(10)
         h = QLabel("Resumen")
         h.setObjectName("h1")
         sub = QLabel(f"{cfg.read('/etc/hostname')} · {os.uname().release}")
         sub.setObjectName("muted")
         outer.addWidget(h)
         outer.addWidget(sub)
-        self.tiles = {}
-        grid = QVBoxLayout()
-        grid.setSpacing(10)
-        names = ["Batería", "Estado", "Temperatura CPU", "Frecuencia CPU", "Gobernador", "Carga",
-                 "Memoria", "Brillo", "Tiempo encendido"]
-        for i in range(0, len(names), 3):
-            r = QHBoxLayout()
-            r.setSpacing(10)
-            for n in names[i:i + 3]:
-                card = QFrame()
-                card.setObjectName("card")
-                v = QVBoxLayout(card)
-                v.setContentsMargins(16, 12, 16, 12)
-                lab = QLabel(n)
-                lab.setObjectName("muted")
-                val = QLabel("…")
-                val.setObjectName("stat")
-                v.addWidget(lab)
-                v.addWidget(val)
-                self.tiles[n] = val
-                r.addWidget(card, 1)
-            grid.addLayout(r)
-        outer.addLayout(grid)
+        # medidores
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.g_cpu = dash.Gauge("CPU")
+        self.g_ram = dash.Gauge("Memoria")
+        self.g_temp = dash.Gauge("Temperatura", unit=" °", maximum=100, warn=0.65, crit=0.8)
+        self.g_bat = dash.Gauge("Batería", invert=True, warn=0.7, crit=0.85)
+        for g in (self.g_cpu, self.g_ram, self.g_temp, self.g_bat):
+            row.addWidget(g, 1)
+        outer.addLayout(row, 3)
+        # gráficas
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.c_load = dash.AreaChart("CPU y memoria", [("CPU", dash.BLUE), ("RAM", dash.PURPLE)])
+        self.c_temp = dash.AreaChart("Temperatura", [("CPU", dash.YELLOW)], maximum=100, unit=" °")
+        self.c_net = dash.AreaChart("Red", [("↓", dash.GREEN), ("↑", dash.BLUE)], maximum=50_000, unit="B/s",
+                                    autoscale=True)
+        for c in (self.c_load, self.c_temp, self.c_net):
+            row.addWidget(c, 1)
+        outer.addLayout(row, 3)
+        # disco + datos sueltos
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        self.b_disk = dash.Bar("Disco /")
+        row.addWidget(self.b_disk, 2)
+        self.facts = QLabel()
+        self.facts.setObjectName("muted")
+        self.facts.setTextFormat(Qt.TextFormat.RichText)
+        self.facts.setWordWrap(True)
+        row.addWidget(self.facts, 3)
+        outer.addLayout(row)
         self.alerts = QLabel()
         self.alerts.setWordWrap(True)
         self.alerts.setTextFormat(Qt.TextFormat.RichText)
         outer.addWidget(self.alerts)
-        outer.addStretch(1)
+        outer.addStretch(0)
+        self._cpu_prev = self._net_prev = None
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
 
     def showEvent(self, e):
+        self._cpu_prev = self._net_prev = None
         self.refresh()
-        self.timer.start(2500)
+        self.timer.start(1000)
 
     def hideEvent(self, e):
         self.timer.stop()
 
     def refresh(self):
+        import shutil
         cap, status = _battery()
         t = _cpu_temp()
+        # CPU % por diferencia de contadores
+        tot, idle = _cpu_times()
+        cpu, first = 0.0, self._cpu_prev is None
+        if self._cpu_prev:
+            dt, di = tot - self._cpu_prev[0], idle - self._cpu_prev[1]
+            cpu = 100 * (1 - di / dt) if dt > 0 else 0.0
+        self._cpu_prev = (tot, idle)
+        ram = _ram_frac()
+        # red en B/s
+        now = time.monotonic()
+        rx, tx = _net_bytes()
+        down = up = 0.0
+        if self._net_prev:
+            el = max(now - self._net_prev[0], 0.1)
+            down, up = (rx - self._net_prev[1]) / el, (tx - self._net_prev[2]) / el
+        self._net_prev = (now, rx, tx)
         freqs = [int(cfg.read(f)) for f in
                  [f"/sys/devices/system/cpu/cpu{i}/cpufreq/scaling_cur_freq" for i in range(os.cpu_count() or 1)]
                  if cfg.read(f).isdigit()]
-        vals = {
-            "Batería": cap, "Estado": status, "Temperatura CPU": f"{t} °C" if t is not None else "—",
-            "Frecuencia CPU": f"{sum(freqs) / len(freqs) / 1e6:.2f} GHz" if freqs else "—",
-            "Gobernador": cfg.read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", "—"),
-            "Carga": " ".join(cfg.read("/proc/loadavg").split()[:3]), "Memoria": _ram(),
-            "Brillo": f"{cfg._brightness_get()}%" if cfg.have("brightnessctl") else "—",
-            "Tiempo encendido": _uptime(),
-        }
-        for k, v in vals.items():
-            self.tiles[k].setText(v)
+        ghz = f"{sum(freqs) / len(freqs) / 1e6:.2f} GHz" if freqs else "—"
+        self.g_cpu.set_value(cpu, ghz)
+        self.g_ram.set_value(ram, _ram())
+        self.g_temp.set_value(t, "caliente" if t and t >= 75 else "normal" if t else "")
+        self.g_bat.set_value(int(cap.rstrip("%")) if cap.rstrip("%").isdigit() else None, status)
+        if not first:  # el primer ciclo no tiene diferencia de contadores
+            self.c_load.push(cpu, ram)
+            self.c_net.push(down, up)
+        self.c_temp.push(t or 0)
+        du = shutil.disk_usage("/")
+        self.b_disk.set_value(du.used / du.total, f"{du.used / 1e9:.0f} de {du.total / 1e9:.0f} GB")
+        gov = cfg.read("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", "—")
+        bright = f"{cfg._brightness_get()}%" if cfg.have("brightnessctl") else "—"
+        load = " ".join(cfg.read("/proc/loadavg").split()[:3])
+        self.facts.setText(f"Gobernador <b>{gov}</b> · Brillo <b>{bright}</b> · Carga <b>{load}</b> · "
+                           f"Encendido <b>{_uptime()}</b>")
         self.alerts.setText(self._alerts(cap, status, t))
 
     @staticmethod
@@ -623,14 +692,66 @@ class Window(QMainWindow):
         self.stack.addWidget(self.results)
         self.side.currentItemChanged.connect(self._select)
         self.side.setCurrentRow(1)
+        self.tray = None
         self.tick = QTimer(self)
         self.tick.timeout.connect(self._battery)
         self.tick.start(5000)
         self._battery()
         self._update_buttons()
+        self._quitting = False
+        self._tray_setup()
         self.log("Centro de mando iniciado")
 
+    # ------------------------------------------------------------- bandeja
+    def _tray_setup(self):
+        self.tray = None
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        self.tray = QSystemTrayIcon(self.windowIcon(), self)
+        menu = QMenu()
+        a_open = QAction("Abrir Centro de mando", menu)
+        a_open.triggered.connect(self.bring_up)
+        a_sum = QAction("Ir al Resumen", menu)
+        a_sum.triggered.connect(lambda: (self.side.setCurrentRow(0), self.bring_up()))
+        a_quit = QAction("Salir", menu)
+        a_quit.triggered.connect(self._quit)
+        for a in (a_open, a_sum):
+            menu.addAction(a)
+        menu.addSeparator()
+        menu.addAction(a_quit)
+        self._tray_menu = menu  # referencia viva
+        self.tray.setContextMenu(menu)
+        self.tray.activated.connect(lambda r: self.toggle_visible() if r == QSystemTrayIcon.ActivationReason.Trigger else None)
+        self.tray.show()
+        self._tray_tip()
+
+    def _tray_tip(self):
+        if self.tray:
+            cap, status = _battery()
+            t = _cpu_temp()
+            self.tray.setToolTip(f"Centro de mando\nBatería {cap} · {status}" + (f"\nCPU {t} °C" if t else ""))
+
+    def bring_up(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def toggle_visible(self):
+        if self.isVisible() and not self.isMinimized():
+            self.hide()
+        else:
+            self.bring_up()
+
+    def _quit(self):
+        self._quitting = True
+        self.close()
+        self._quitting = False  # si se canceló por cambios pendientes, seguimos vivos
+
     def closeEvent(self, e):
+        if self.tray and self.tray.isVisible() and not self._quitting:
+            self.hide()  # con bandeja, la X solo oculta; «Salir» del menú cierra de verdad
+            e.ignore()
+            return
         if self.pending and QMessageBox.question(
                 self, "Cambios sin aplicar",
                 f"Hay {len(self.pending)} cambio(s) sin aplicar. ¿Salir y descartarlos?",
@@ -642,6 +763,7 @@ class Window(QMainWindow):
     def _battery(self):
         cap, status = _battery()
         self.bat.setText(f"Batería {cap} · {status}")
+        self._tray_tip()
 
     def _select(self, item, _prev):
         if not item:
@@ -747,8 +869,20 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(CSS)
     app.setWindowIcon(QIcon(os.path.join(cfg.HERE, "panel-portatil.svg")))
+    # instancia única: si ya hay una (p. ej. en la bandeja), la traemos al frente y salimos
+    sock = QLocalSocket()
+    sock.connectToServer("panel-portatil")
+    if sock.waitForConnected(300):
+        sock.write(b"show")
+        sock.waitForBytesWritten(300)
+        return
+    QLocalServer.removeServer("panel-portatil")
+    server = QLocalServer()
+    server.listen("panel-portatil")
     w = Window()
-    w.show()
+    server.newConnection.connect(lambda: (server.nextPendingConnection(), w.bring_up()))
+    if "--tray" not in sys.argv or not w.tray:  # --tray: arrancar oculto en la bandeja
+        w.show()
     sys.exit(app.exec())
 
 

@@ -8,7 +8,9 @@ import time
 import xml.etree.ElementTree as ET
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import (QFrame, QProgressBar, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
+from PyQt6.QtGui import QKeySequence
+from PyQt6.QtWidgets import (QCheckBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QHeaderView, QKeySequenceEdit,
+                             QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QProgressBar,
                              QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 import deskcfg as dc
@@ -278,8 +280,106 @@ def parse_keybinds():
             cmd = a.findtext(NS + "command") or a.findtext(NS + "execute")
             acts.append(f"Ejecutar: {' '.join(cmd.split())}" if cmd else
                         name + "".join(f" {c.text.strip()}" for c in a if c.text and c.text.strip()))
-        out.append((pretty_key(kb.get("key", "")), " → ".join(acts)))
+        out.append((pretty_key(kb.get("key", "")), " → ".join(acts), kb.get("key", "")))
     return out
+
+
+QT_KEYS = {"Return": "Return", "Enter": "KP_Enter", "Esc": "Escape", "Del": "Delete", "Backspace": "BackSpace",
+           "Space": "space", "Tab": "Tab", "Ins": "Insert", "PgUp": "Prior", "PgDown": "Next", "Print": "Print",
+           "Left": "Left", "Right": "Right", "Up": "Up", "Down": "Down", "Home": "Home", "End": "End",
+           "Backtab": "Tab"}
+
+
+def qt_to_openbox(seq):
+    """QKeySequence → cadena de tecla de Openbox ('W-C-t'); '' si no es válida."""
+    if seq.isEmpty():
+        return ""
+    kc = seq[0]
+    mods = kc.keyboardModifiers()
+    key = QKeySequence(kc.key()).toString()
+    if not key:
+        return ""
+    key = QT_KEYS.get(key, key.lower() if len(key) == 1 else key)
+    pre = ""
+    for flag, ch in ((Qt.KeyboardModifier.MetaModifier, "W"), (Qt.KeyboardModifier.ControlModifier, "C"),
+                     (Qt.KeyboardModifier.AltModifier, "A"), (Qt.KeyboardModifier.ShiftModifier, "S")):
+        if mods & flag:
+            pre += ch + "-"
+    return pre + key
+
+
+def _esc(t):
+    return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+
+
+def rc_change_key(old, new):
+    txt = dc.read(dc.RC_XML)
+    if re.search(rf'<keybind key="{re.escape(new)}"', txt):
+        raise RuntimeError(f"{pretty_key(new)} ya está asignado")
+    out, n = re.subn(rf'(<keybind key="){re.escape(old)}(")', lambda m: m.group(1) + _esc(new) + m.group(2), txt, count=1)
+    if not n:
+        raise RuntimeError("No encuentro ese atajo en rc.xml")
+    dc.write(dc.RC_XML, out)
+    dc.later("openbox")
+
+
+def rc_delete_key(key):
+    txt = dc.read(dc.RC_XML)
+    out, n = re.subn(rf'[ \t]*<keybind key="{re.escape(key)}">.*?</keybind>[ \t]*\n?', "", txt, count=1, flags=re.S)
+    if not n:
+        raise RuntimeError("No encuentro ese atajo en rc.xml")
+    dc.write(dc.RC_XML, out)
+    dc.later("openbox")
+
+
+def rc_add_key(key, command):
+    txt = dc.read(dc.RC_XML)
+    if re.search(rf'<keybind key="{re.escape(key)}"', txt):
+        raise RuntimeError(f"{pretty_key(key)} ya está asignado")
+    block = (f'    <keybind key="{_esc(key)}">\n      <action name="Execute">\n'
+             f'        <command>{_esc(command)}</command>\n      </action>\n    </keybind>\n')
+    i = txt.rfind("</keyboard>")
+    if i < 0:
+        raise RuntimeError("rc.xml no tiene sección <keyboard>")
+    dc.write(dc.RC_XML, txt[:i].rstrip(" \t") + block + "  " + txt[i:])
+    dc.later("openbox")
+
+
+class KeyDialog(QDialog):
+    """Pide una tecla (capturándola o escribiéndola) y, opcionalmente, un comando."""
+
+    def __init__(self, parent, title, key="", with_command=False):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(460, 10)
+        form = QFormLayout(self)
+        self.cap = QKeySequenceEdit()
+        self.cap.keySequenceChanged.connect(self._captured)
+        form.addRow("Pulsa la combinación", self.cap)
+        self.key = QLineEdit(key)
+        self.key.setPlaceholderText("p. ej. W-e, C-A-t, XF86AudioMute")
+        form.addRow("Tecla (Openbox)", self.key)
+        self.cmd = QLineEdit()
+        self.cmd.setPlaceholderText("p. ej. thunar")
+        if with_command:
+            form.addRow("Comando", self.cmd)
+        note = QLabel("W = Super · C = Ctrl · A = Alt · S = Mayús")
+        note.setObjectName("muted")
+        form.addRow(note)
+        row = QHBoxLayout()
+        ok, no = QPushButton("Guardar"), QPushButton("Cancelar")
+        ok.setObjectName("primary")
+        ok.clicked.connect(self.accept)
+        no.clicked.connect(self.reject)
+        row.addStretch(1)
+        row.addWidget(no)
+        row.addWidget(ok)
+        form.addRow(row)
+
+    def _captured(self, seq):
+        k = qt_to_openbox(seq)
+        if k:
+            self.key.setText(k)
 
 
 class ShortcutsPage(QWidget):
@@ -287,12 +387,19 @@ class ShortcutsPage(QWidget):
         super().__init__()
         outer = QVBoxLayout(self)
         outer.setContentsMargins(24, 16, 24, 8)
-        self.sub = _header(outer, "Atajos de teclado", "Los de Openbox (rc.xml). Solo lectura; la chuleta de conky es un reflejo de esta lista.")
+        self.sub = _header(outer, "Atajos de teclado", "Los de Openbox (rc.xml). Cada cambio hace copia de seguridad y recarga Openbox. La chuleta de conky es un archivo aparte y no se actualiza sola.")
         self.filter = QLineEdit()
         self.filter.setObjectName("search")
         self.filter.setPlaceholderText("Filtrar atajos o acciones…")
         self.filter.textChanged.connect(self.fill)
         outer.addWidget(self.filter)
+        bar = QHBoxLayout()
+        for text, fn in (("Añadir…", self.add), ("Cambiar tecla…", self.change), ("Eliminar", self.delete)):
+            b = QPushButton(text)
+            b.clicked.connect(fn)
+            bar.addWidget(b)
+        bar.addStretch(1)
+        outer.addLayout(bar)
         self.table = QTableWidget(0, 2)
         self.table.setHorizontalHeaderLabels(["Atajo", "Acción"])
         self.table.verticalHeader().hide()
@@ -302,7 +409,7 @@ class ShortcutsPage(QWidget):
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         outer.addWidget(self.table, 1)
-        self.binds = []
+        self.binds, self.shown = [], []
 
     def refresh(self):
         self.binds = parse_keybinds()
@@ -312,10 +419,46 @@ class ShortcutsPage(QWidget):
         q = self.filter.text().lower().strip()
         rows = [b for b in self.binds if q in (b[0] + " " + b[1]).lower()]
         self.table.setRowCount(len(rows))
-        for i, (k, a) in enumerate(rows):
+        self.shown = rows
+        for i, (k, a, raw) in enumerate(rows):
             self.table.setItem(i, 0, QTableWidgetItem(k))
             self.table.setItem(i, 1, QTableWidgetItem(a))
-        self.sub.setText(f"{len(rows)} de {len(self.binds)} atajos · solo lectura; edita rc.xml o usa obconf.")
+        self.sub.setText(f"{len(rows)} de {len(self.binds)} atajos · los cambios recargan Openbox al momento.")
+
+    def _selected(self):
+        r = self.table.currentRow()
+        return self.shown[r] if 0 <= r < len(self.shown) else None
+
+    def _do(self, fn, *args):
+        try:
+            dc.begin()
+            fn(*args)
+            dc.end()
+        except Exception as e:
+            dc._post.clear()
+            dc._batch = 0
+            QMessageBox.warning(self, "No se pudo", str(e))
+        self.refresh()
+
+    def add(self):
+        d = KeyDialog(self, "Añadir atajo", with_command=True)
+        if d.exec() and d.key.text().strip() and d.cmd.text().strip():
+            self._do(rc_add_key, d.key.text().strip(), d.cmd.text().strip())
+
+    def change(self):
+        sel = self._selected()
+        if not sel:
+            QMessageBox.information(self, "Cambiar tecla", "Selecciona primero un atajo de la lista.")
+            return
+        d = KeyDialog(self, f"Nueva tecla para: {sel[1][:50]}", key=sel[2])
+        if d.exec() and d.key.text().strip() and d.key.text().strip() != sel[2]:
+            self._do(rc_change_key, sel[2], d.key.text().strip())
+
+    def delete(self):
+        sel = self._selected()
+        if sel and QMessageBox.question(self, "Eliminar atajo", f"¿Eliminar {sel[0]}?\n{sel[1]}") == \
+                QMessageBox.StandardButton.Yes:
+            self._do(rc_delete_key, sel[2])
 
 
 # ----------------------------------------------------------------------- disco
@@ -489,4 +632,113 @@ class UpdatesPage(QWidget):
         self.b_term.setEnabled(n > 0)
 
 
-PAGES = {"actualizaciones": UpdatesPage, "disco": DiskPage, "bateria": BatteryPage, "procesos": ProcessPage, "atajos": ShortcutsPage}
+
+# -------------------------------------------------------------------- dotfiles
+DOTFILES = os.path.expanduser("~/dotfiles")
+STATUS_ES = {"M": "modificado", "A": "añadido", "D": "borrado", "R": "renombrado", "?": "nuevo"}
+
+
+def git(*args, timeout=30):
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", LC_ALL="C")
+    r = subprocess.run(["git", "-C", DOTFILES, *args], capture_output=True, text=True, timeout=timeout, env=env)
+    return r.returncode, (r.stdout + r.stderr).rstrip()
+
+
+class DotfilesPage(QWidget):
+    """Estado del repo de dotfiles: elegir qué archivos van al commit y subirlos."""
+
+    def __init__(self, win=None):
+        super().__init__()
+        self.win = win
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(24, 16, 24, 8)
+        self.sub = _header(outer, "Dotfiles", "Cambios pendientes de ~/dotfiles. Marca los que quieras incluir en el commit.")
+        self.files = QListWidget()
+        outer.addWidget(self.files, 3)
+        self.msg = QLineEdit()
+        self.msg.setObjectName("search")
+        self.msg.setPlaceholderText("Mensaje del commit…")
+        outer.addWidget(self.msg)
+        bar = QHBoxLayout()
+        self.b_commit = QPushButton("Commit de lo marcado")
+        self.b_commit.setObjectName("primary")
+        self.b_commit.clicked.connect(self.commit)
+        self.b_push = QPushButton("Subir (push)")
+        self.b_push.clicked.connect(self.push)
+        b_ref = QPushButton("Actualizar")
+        b_ref.clicked.connect(self.refresh)
+        for b in (self.b_commit, self.b_push, b_ref):
+            bar.addWidget(b)
+        bar.addStretch(1)
+        outer.addLayout(bar)
+        self.info = QLabel()
+        self.info.setObjectName("muted")
+        self.info.setWordWrap(True)
+        outer.addWidget(self.info)
+        self.log_view = QListWidget()
+        self.log_view.setMaximumHeight(110)
+        outer.addWidget(self.log_view)
+
+    def showEvent(self, e):
+        self.refresh()
+
+    def refresh(self):
+        if not os.path.isdir(os.path.join(DOTFILES, ".git")):
+            self.sub.setText("No hay repositorio en ~/dotfiles.")
+            return
+        self.files.clear()
+        _, out = git("status", "--porcelain", "-uall")
+        for line in out.splitlines():
+            code, path = line[:2], line[3:].strip('"')
+            it = QListWidgetItem(f"{STATUS_ES.get(code.strip()[:1], code)}  ·  {path}")
+            it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            it.setCheckState(Qt.CheckState.Unchecked)
+            it.setData(Qt.ItemDataRole.UserRole, path)
+            self.files.addItem(it)
+        n = self.files.count()
+        _, branch = git("rev-parse", "--abbrev-ref", "HEAD")
+        rc, ahead = git("rev-list", "--count", "@{u}..HEAD")
+        ahead = ahead.strip()
+        branch = branch.strip()
+        pend = f" · {ahead} commit(s) sin subir" if rc == 0 and ahead != "0" else ""
+        self.info.setText(f"Rama {branch}{pend}" + ("" if n else " · todo al día, sin cambios pendientes."))
+        self.b_commit.setEnabled(n > 0)
+        self.b_push.setEnabled(rc == 0 and ahead != "0")
+        self.log_view.clear()
+        _, hist = git("log", "-8", "--format=%h  %ad  %s", "--date=format:%d/%m %H:%M")
+        self.log_view.addItems(hist.splitlines())
+
+    def commit(self):
+        paths = [self.files.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.files.count())
+                 if self.files.item(i).checkState() == Qt.CheckState.Checked]
+        msg = self.msg.text().strip()
+        if not paths or not msg:
+            QMessageBox.information(self, "Commit", "Marca al menos un archivo y escribe un mensaje.")
+            return
+        rc, out = git("add", "--", *paths)
+        if rc == 0:
+            rc, out = git("commit", "-m", msg, "--", *paths)
+        if rc:
+            QMessageBox.warning(self, "No se pudo hacer el commit", out)
+        else:
+            self.msg.clear()
+            if self.win:
+                self.win.log(f"✓ Commit en dotfiles: {msg}")
+        self.refresh()
+
+    def push(self):
+        if QMessageBox.question(self, "Subir dotfiles", "¿Enviar los commits a GitHub (origin)?") != \
+                QMessageBox.StandardButton.Yes:
+            return
+        try:
+            rc, out = git("push", timeout=60)
+        except subprocess.TimeoutExpired:
+            rc, out = 1, "Tiempo agotado (¿faltan credenciales?)."
+        if rc:
+            QMessageBox.warning(self, "No se pudo subir", out)
+        elif self.win:
+            self.win.log("✓ Dotfiles subidos a origin")
+        self.refresh()
+
+
+PAGES = {"actualizaciones": UpdatesPage, "disco": DiskPage, "bateria": BatteryPage, "procesos": ProcessPage, "atajos": ShortcutsPage, "dotfiles": DotfilesPage}

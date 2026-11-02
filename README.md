@@ -25,8 +25,8 @@ Reaplicar ajustes de sesión al arrancar (touchpad, teclado, DPMS, temperatura d
 | General | Resumen (con alertas), Presets (Ahorro / Equilibrado / Rendimiento con vista previa y reversión) |
 | Hardware | Energía (TLP, tapa, DPMS), Pantalla, Audio, Entrada (touchpad, teclado), Batería (salud) |
 | Conectividad | Red, Nube (Drive con rclone) |
-| Personalización | Escritorio, Conky, Barras tint2, Compositor (picom), Ventanas (Openbox), Arranque, Atajos |
-| Sistema | Servicios, Sistema, Actualizaciones, Disco (limpieza), Procesos |
+| Personalización | Escritorio, Conky, Barras tint2, Compositor (picom), Ventanas (Openbox), Arranque, Atajos (editables) |
+| Sistema | Servicios, Sistema, Actualizaciones, Disco (limpieza), Procesos, Dotfiles (commit/push) |
 
 ## Archivos
 
@@ -54,3 +54,13 @@ Reaplicar ajustes de sesión al arrancar (touchpad, teclado, DPMS, temperatura d
 - Los widgets de tarjeta deben tener padre antes de mostrarse (si no, parpadean como ventanas sueltas).
 - Estado de sesión en `~/.config/panel-portatil/state.json`; instantánea del último preset en
   `preset-snapshot.json`.
+
+## Resumen gráfico, atajos, dotfiles y bandeja
+
+- **Resumen:** cuatro medidores (CPU, memoria, temperatura, batería) y tres gráficas con histórico
+  de 90 s (CPU+RAM, temperatura, red ↓↑), barra de disco y alertas. Widgets en `dash.py`.
+- **Atajos:** añadir, cambiar tecla (se captura pulsándola) y eliminar; edita `rc.xml` con
+  copia de seguridad y `openbox --reconfigure`. La chuleta de conky es un archivo aparte.
+- **Dotfiles:** lista los cambios de `~/dotfiles`, commit solo de lo marcado y push con confirmación.
+- **Bandeja:** icono con tooltip (batería, CPU); clic alterna la ventana; la X solo oculta, *Salir* del
+  menú cierra. Instancia única; `panel-portatil --tray` arranca oculto.
