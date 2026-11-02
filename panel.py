@@ -2,6 +2,7 @@
 """Centro de mando del portátil: panel lateral con categorías y ajustes en vivo."""
 import json
 import os
+import re
 import sys
 import time
 import unicodedata
@@ -21,6 +22,11 @@ import settings as cfg
 CSS = """
 * { font-family: 'Noto Sans','DejaVu Sans',sans-serif; font-size: 13px; color: #cfd6de; }
 QToolTip { background: #474d5d; color: #e8ecf1; border: none; border-radius: 4px; padding: 5px 9px; }
+QMenu { background: #ffffff; border: 1px solid #dcdfe3; padding: 0; }
+QMenu::item { color: #5c616c; padding: 6px 22px 6px 34px; background: transparent; }
+QMenu::item:selected { background: #b3bcc6; color: #3b3e45; }
+QMenu::icon { padding-left: 10px; }
+QMenu::separator { height: 1px; background: #e1e5ea; margin: 3px 0; }
 QMainWindow, QDialog { background: #0b0f14; }
 QWidget#sidepanel { background: #10151f; border: 1px solid #1a2230; border-radius: 10px; }
 QListWidget#side { background: transparent; border: none; outline: 0; padding: 4px; }
@@ -710,11 +716,12 @@ class Window(QMainWindow):
             return
         self.tray = QSystemTrayIcon(self.windowIcon(), self)
         menu = QMenu()
-        a_open = QAction("Abrir Centro de mando", menu)
+        ic = lambda *names: next((QIcon.fromTheme(n) for n in names if QIcon.hasThemeIcon(n)), QIcon())
+        a_open = QAction(self.windowIcon(), "Abrir Centro de mando", menu)
         a_open.triggered.connect(self.bring_up)
-        a_sum = QAction("Ir al Resumen", menu)
+        a_sum = QAction(ic("utilities-system-monitor", "applications-system"), "Ir al Resumen", menu)
         a_sum.triggered.connect(lambda: (self.side.setCurrentRow(0), self.bring_up()))
-        a_quit = QAction("Salir", menu)
+        a_quit = QAction(ic("system-shutdown", "application-exit", "window-close"), "Salir", menu)
         a_quit.triggered.connect(self._quit)
         for a in (a_open, a_sum):
             menu.addAction(a)
@@ -870,6 +877,10 @@ def main():
     app = QApplication(sys.argv)
     app.setStyleSheet(CSS)
     app.setWindowIcon(QIcon(os.path.join(cfg.HERE, "panel-portatil.svg")))
+    # mismo tema de iconos que el resto del escritorio (Qt no lo toma de GTK por su cuenta)
+    m = re.search(r"^gtk-icon-theme-name\s*=\s*\"?([^\"\n]+)", cfg.read(os.path.expanduser("~/.config/gtk-3.0/settings.ini")), re.M)
+    if m:
+        QIcon.setThemeName(m.group(1).strip())
     # instancia única: si ya hay una (p. ej. en la bandeja), la traemos al frente y salimos
     sock = QLocalSocket()
     sock.connectToServer("panel-portatil")
