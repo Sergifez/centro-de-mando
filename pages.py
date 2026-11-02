@@ -2,6 +2,7 @@
 import glob
 import os
 import re
+import shutil
 import signal
 import subprocess
 import time
@@ -521,8 +522,8 @@ class DiskPage(LivePage):
         self.jr = self._row(outer, "Registros del sistema (journal)", "Reduce los logs de systemd a 100 MB.",
                             "Reducir", lambda: self.clean([["journal", 100]], "Reducir journal a 100 MB"))
         self.cache = self._row(outer, "Caché de usuario (~/.cache)", "Solo informativo: cada programa gestiona la suya.", None, None)
-        self.cache_table = QTableWidget(0, 3)
-        self.cache_table.setHorizontalHeaderLabels(["Programa", "", "Tamaño"])
+        self.cache_table = QTableWidget(0, 4)
+        self.cache_table.setHorizontalHeaderLabels(["Programa", "", "Tamaño", ""])
         self.cache_table.verticalHeader().hide()
         self.cache_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.cache_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
@@ -531,6 +532,7 @@ class DiskPage(LivePage):
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         hh.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.cache_table.setMinimumHeight(25 * 30 + 30)
         self.cache_table.verticalHeader().setDefaultSectionSize(30)
         self.cache_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -636,6 +638,28 @@ class DiskPage(LivePage):
             it = QTableWidgetItem(f"{sz / 1024:.0f} KB" if sz < 1 << 20 else _mb(sz))
             it.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self.cache_table.setItem(i, 2, it)
+            b = QPushButton("Borrar")
+            b.setStyleSheet("padding:2px 10px;")
+            b.clicked.connect(lambda _c=False, n=n, sz=sz: self.delete_cache(n, sz))
+            self.cache_table.setCellWidget(i, 3, b)
+
+    def delete_cache(self, name, size):
+        base = os.path.realpath(os.path.expanduser("~/.cache"))
+        path = os.path.join(base, name)
+        if not name or "/" in name or name in (".", "..") or os.path.dirname(path) != base:
+            return
+        if QMessageBox.question(self, "Borrar caché", f"¿Borrar la caché de «{name}» ({_mb(size)})?\n\n"
+                                "El programa la volverá a crear; puede tardar más en la próxima apertura. "
+                                "Ciérralo antes si está abierto.") != QMessageBox.StandardButton.Yes:
+            return
+
+        def rm():
+            if os.path.islink(path) or os.path.isfile(path):
+                os.unlink(path)
+            else:
+                shutil.rmtree(path, ignore_errors=True)
+
+        self.win.run(rm, f"Borrar caché de {name}", after=self.refresh)
 
 
 # ------------------------------------------------------------- actualizaciones
