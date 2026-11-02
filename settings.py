@@ -12,6 +12,12 @@ import subprocess
 
 import deskcfg as dc
 
+# Los programas propios (mesa-sonido, solidcraft-cli…) viven en ~/.local/bin, que no siempre está en el PATH
+# de la sesión de Openbox. Sin esto, `have()` los da por no instalados y sus botones desaparecen.
+_LOCAL_BIN = os.path.expanduser("~/.local/bin")
+if _LOCAL_BIN not in os.environ.get("PATH", "").split(os.pathsep):
+    os.environ["PATH"] = _LOCAL_BIN + os.pathsep + os.environ.get("PATH", "")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 HELPER = os.path.join(HERE, "root_helper.py")
 STATE_DIR = os.path.expanduser("~/.config/panel-portatil")
@@ -609,8 +615,9 @@ def build():
           get=lambda: _muted("@DEFAULT_AUDIO_SOURCE@"), avail=lambda: have("wpctl"),
           set=lambda v: check("wpctl", "set-mute", "@DEFAULT_AUDIO_SOURCE@", "1" if v else "0")),
         S("mesa", "audio", "Mesa de sonido ZENIT-8", "Mezclador de 8 canales con efectos y EQ.", "button",
-          avail=lambda: have("mesa-sonido"),
-          set=lambda _v: subprocess.Popen(["mesa-sonido"], start_new_session=True)),
+          label="Abrir", avail=lambda: have("mesa-sonido"),
+          set=lambda _v: subprocess.Popen(["mesa-sonido"], start_new_session=True,
+                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)),
         S("pavu", "audio", "Mezclador de volúmenes", "Control por aplicación y dispositivos.", "button",
           avail=lambda: have("pavucontrol"),
           set=lambda _v: subprocess.Popen(["pavucontrol"], start_new_session=True)),
