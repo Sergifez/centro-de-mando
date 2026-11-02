@@ -269,24 +269,40 @@ def read_meta(path):
     """Extrae del AppImage su .desktop y su icono (sin ejecutarlo). → dict(name, cats, icon_file)."""
     meta = {"name": pretty_name(path), "cats": [], "icon_file": ""}
     with tempfile.TemporaryDirectory(prefix="appimg-") as tmp:
+        root = os.path.join(tmp, "squashfs-root")
+
         def extract(pattern):
             try:
                 subprocess.run([path, "--appimage-extract", pattern], cwd=tmp, capture_output=True, timeout=90)
             except (OSError, subprocess.SubprocessError):
                 pass
+
+        def fetch(rel):
+            """Extrae `rel` y, si es un enlace simbólico interno (muy común), sigue la cadena hasta el archivo real."""
+            for _ in range(6):
+                extract(rel)
+                p = os.path.join(root, rel)
+                if os.path.islink(p):
+                    rel = os.path.normpath(os.path.join(os.path.dirname(rel), os.readlink(p))).lstrip("/")
+                    continue
+                real = os.path.realpath(p)
+                return real if real.startswith(os.path.realpath(root) + os.sep) and os.path.isfile(real) else ""
+            return ""
+
         extract("*.desktop")
-        root = os.path.join(tmp, "squashfs-root")
         found = sorted(f for f in os.listdir(root) if f.endswith(".desktop")) if os.path.isdir(root) else []
         icon = ""
-        if found:
-            text = open(os.path.join(root, found[0]), encoding="utf-8", errors="replace").read()
-            meta["name"] = desktop_field(text, "Name") or meta["name"]
-            meta["cats"] = [c for c in desktop_field(text, "Categories").split(";") if c]
-            icon = desktop_field(text, "Icon")
+        for f in found:
+            real = fetch(f)
+            if real:
+                text = open(real, encoding="utf-8", errors="replace").read()
+                meta["name"] = desktop_field(text, "Name") or meta["name"]
+                meta["cats"] = [c for c in desktop_field(text, "Categories").split(";") if c]
+                icon = desktop_field(text, "Icon")
+                break
         for cand in ([icon + ".png", icon + ".svg"] if icon else []) + [".DirIcon"]:
-            extract(cand)
-            f = os.path.realpath(os.path.join(root, cand)) if os.path.isdir(root) else ""
-            if f.startswith(os.path.realpath(root) + os.sep) and os.path.isfile(f):
+            f = fetch(cand)
+            if f:
                 ext = ".svg" if f.lower().endswith(".svg") else ".png"
                 dest = os.path.join(tempfile.gettempdir(), f"appimg-icon-{slug(path)}{ext}")
                 shutil.copy2(f, dest)
