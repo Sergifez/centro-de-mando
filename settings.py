@@ -553,6 +553,7 @@ CATEGORIES = [
     ("actualizaciones", "Actualizaciones", "SISTEMA", "⟳"),
     ("disco", "Disco", "SISTEMA", "◙"),
     ("procesos", "Procesos", "SISTEMA", "≣"),
+    ("apps", "Apps", "SISTEMA", "▣"),
     ("dotfiles", "Dotfiles", "SISTEMA", "⎇"),
 ]
 

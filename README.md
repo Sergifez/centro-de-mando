@@ -26,7 +26,7 @@ Reaplicar ajustes de sesión al arrancar (touchpad, teclado, DPMS, temperatura d
 | Hardware | Energía (TLP, tapa, DPMS), Pantalla, Audio, Entrada (touchpad, teclado), Batería (salud) |
 | Conectividad | Red, Nube (Drive con rclone) |
 | Personalización | Escritorio, Conky, Barras tint2, Compositor (picom), Ventanas (Openbox), Arranque, Atajos (editables) |
-| Sistema | Servicios, Sistema, Actualizaciones, Disco (limpieza), Procesos, Dotfiles (commit/push) |
+| Sistema | Servicios, Sistema, Actualizaciones, Disco (limpieza), Procesos, Apps (AppImage), Dotfiles (commit/push) |
 
 ## Archivos
 
@@ -64,3 +64,8 @@ Reaplicar ajustes de sesión al arrancar (touchpad, teclado, DPMS, temperatura d
 - **Dotfiles:** lista los cambios de `~/dotfiles`, commit solo de lo marcado y push con confirmación.
 - **Bandeja:** icono con tooltip (batería, CPU); clic alterna la ventana; la X solo oculta, *Salir* del
   menú cierra. Instancia única; `panel-portatil --tray` arranca oculto.
+- **Apps (AppImage):** todas viven en `~/Applications` (`apps.py`). Ejecutar, Comprobar/Actualizar y Eliminar
+  (a la papelera, con su lanzador de menú). La actualización lee la sección ELF `.upd_info` de cada AppImage
+  (`gh-releases-zsync` vía API de GitHub, o `zsync|URL` comparando `Length`); descarga a `.nombre.part`, comprueba
+  que sea ELF y solo entonces sustituye (la versión vieja va a la papelera y se reescriben los `.desktop`).
+  «Traer las dispersas…» mueve los AppImage de otras carpetas (ignora puntos de montaje como ~/Drive).

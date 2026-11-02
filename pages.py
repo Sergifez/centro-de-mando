@@ -830,4 +830,4 @@ class DotfilesPage(QWidget):
         self.refresh()
 
 
-PAGES = {"actualizaciones": UpdatesPage, "disco": DiskPage, "bateria": BatteryPage, "procesos": ProcessPage, "atajos": ShortcutsPage, "dotfiles": DotfilesPage}
+PAGES = {"actualizaciones": UpdatesPage, "disco": DiskPage, "bateria": BatteryPage, "procesos": ProcessPage, "atajos": ShortcutsPage, "dotfiles": DotfilesPage, "apps": __import__("apps").AppsPage}
