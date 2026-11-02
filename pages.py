@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (QCheckBox, QDialog, QFormLayout, QFrame, QHBoxLayout, QHeaderView, QKeySequenceEdit,
                              QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox, QProgressBar,
-                             QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
+                             QPushButton, QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 
 import deskcfg as dc
 from settings import read, run_root, sh
@@ -473,6 +473,13 @@ def _dir_size(path):
     return total
 
 
+def _file_size(path):
+    try:
+        return os.lstat(path).st_size
+    except OSError:
+        return 0
+
+
 def _mb(n):
     return f"{n / 1048576:.0f} MB" if n < 1 << 30 else f"{n / (1 << 30):.1f} GB"
 
@@ -492,7 +499,14 @@ class DiskPage(LivePage):
     def __init__(self, win):
         super().__init__()
         self.win = win
-        outer = QVBoxLayout(self)
+        top = QVBoxLayout(self)
+        top.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        inner = QWidget()
+        scroll.setWidget(inner)
+        top.addWidget(scroll)
+        outer = QVBoxLayout(inner)
         outer.setContentsMargins(24, 16, 24, 8)
         _header(outer, "Disco y limpieza", "Espacio por partición y limpieza de archivos que se pueden regenerar.")
         self.parts = QVBoxLayout()
@@ -507,7 +521,20 @@ class DiskPage(LivePage):
         self.jr = self._row(outer, "Registros del sistema (journal)", "Reduce los logs de systemd a 100 MB.",
                             "Reducir", lambda: self.clean([["journal", 100]], "Reducir journal a 100 MB"))
         self.cache = self._row(outer, "Caché de usuario (~/.cache)", "Solo informativo: cada programa gestiona la suya.", None, None)
-        outer.addStretch(1)
+        self.cache_table = QTableWidget(0, 3)
+        self.cache_table.setHorizontalHeaderLabels(["Programa", "", "Tamaño"])
+        self.cache_table.verticalHeader().hide()
+        self.cache_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.cache_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.cache_table.setShowGrid(False)
+        hh = self.cache_table.horizontalHeader()
+        hh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        hh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        hh.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.cache_table.setMinimumHeight(25 * 30 + 30)
+        self.cache_table.verticalHeader().setDefaultSectionSize(30)
+        self.cache_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        outer.addWidget(self.cache_table, 1)
         self.busy = False
 
     def _row(self, outer, title, desc, btn, fn):
@@ -570,7 +597,45 @@ class DiskPage(LivePage):
         self.apt.setText(_mb(_dir_size("/var/cache/apt/archives")))
         m = re.search(r"take up ([\d.]+)([KMG])", sh("journalctl", "--disk-usage"))
         self.jr.setText(f"{m.group(1)} {m.group(2)}B" if m else "—")
-        self.cache.setText(_mb(_dir_size(os.path.expanduser("~/.cache"))) if not self.busy else "…")
+        if not self.busy:
+            self._fill_cache()
+        else:
+            self.cache.setText("…")
+
+    def _fill_cache(self):
+        """Tamaño de cada programa dentro de ~/.cache, de mayor a menor."""
+        base = os.path.expanduser("~/.cache")
+        items = []
+        try:
+            names = os.listdir(base)
+        except OSError:
+            names = []
+        for n in names:
+            p = os.path.join(base, n)
+            items.append((n, _dir_size(p) if os.path.isdir(p) and not os.path.islink(p) else _file_size(p)))
+        items.sort(key=lambda x: -x[1])
+        total = sum(sz for _n, sz in items)
+        self.cache.setText(_mb(total))
+        top = items[:25]
+        biggest = max((sz for _n, sz in top), default=1) or 1
+        self.cache_table.setRowCount(len(top))
+        for i, (n, sz) in enumerate(top):
+            self.cache_table.setItem(i, 0, QTableWidgetItem(n))
+            cell = QWidget()
+            cl = QVBoxLayout(cell)
+            cl.setContentsMargins(8, 0, 8, 0)
+            bar = QProgressBar()
+            cl.addWidget(bar, 0, Qt.AlignmentFlag.AlignVCenter)
+            bar.setRange(0, 1000)
+            bar.setValue(int(sz * 1000 / biggest))
+            bar.setTextVisible(False)
+            bar.setFixedHeight(8)
+            bar.setStyleSheet("QProgressBar{background:#1a2230;border:none;border-radius:4px;}"
+                              "QProgressBar::chunk{background:#3aa8e0;border-radius:4px;}")
+            self.cache_table.setCellWidget(i, 1, cell)
+            it = QTableWidgetItem(f"{sz / 1024:.0f} KB" if sz < 1 << 20 else _mb(sz))
+            it.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self.cache_table.setItem(i, 2, it)
 
 
 # ------------------------------------------------------------- actualizaciones
