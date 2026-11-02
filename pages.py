@@ -830,4 +830,47 @@ class DotfilesPage(QWidget):
         self.refresh()
 
 
-PAGES = {"actualizaciones": UpdatesPage, "disco": DiskPage, "bateria": BatteryPage, "procesos": ProcessPage, "atajos": ShortcutsPage, "dotfiles": DotfilesPage, "apps": __import__("apps").AppsPage}
+
+# ----------------------------------------------------------------------- ayuda
+class HelpPage(QWidget):
+    """Muestra AYUDA.md (la misma guía que acompaña al repositorio) con un índice lateral."""
+
+    def __init__(self, win=None):
+        super().__init__()
+        from PyQt6.QtWidgets import QTextBrowser
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(24, 16, 24, 8)
+        self.toc = QListWidget()
+        self.toc.setFixedWidth(190)
+        self.toc.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.toc.currentRowChanged.connect(self.goto)
+        lay.addWidget(self.toc)
+        self.view = QTextBrowser()
+        self.view.setOpenExternalLinks(True)
+        self.view.document().setDefaultStyleSheet(
+            "h1{color:#f0f4f8;font-size:22px;} h2{color:#3aa8e0;font-size:17px;margin-top:18px;}"
+            "h3{color:#e6ebf0;font-size:14px;} li{margin-bottom:3px;} a{color:#3aa8e0;}"
+            "code{background:#151d28;color:#9fd4f0;} th{background:#10151f;padding:4px;}"
+            "td{padding:4px;border-bottom:1px solid #172030;}")
+        self.view.setStyleSheet("QTextBrowser{background:#0d131b;border:1px solid #172030;border-radius:8px;padding:10px;}")
+        lay.addWidget(self.view, 1)
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "AYUDA.md")
+        try:
+            text = open(path, encoding="utf-8").read()
+        except OSError:
+            text = "# Ayuda\n\nNo se encuentra AYUDA.md junto al programa."
+        self.view.setMarkdown(text)
+        self.heads = [l[3:].strip() for l in text.splitlines() if l.startswith("## ")]
+        self.toc.addItems(["Inicio"] + self.heads)
+
+    def goto(self, row):
+        if row <= 0:
+            self.view.verticalScrollBar().setValue(0)
+            return
+        cur = self.view.document().find(self.heads[row - 1])
+        if not cur.isNull():
+            top = self.view.cursorRect(cur).top() + self.view.verticalScrollBar().value()
+            self.view.verticalScrollBar().setValue(max(0, top - 6))
+
+
+PAGES = {"actualizaciones": UpdatesPage, "disco": DiskPage, "bateria": BatteryPage, "procesos": ProcessPage, "atajos": ShortcutsPage, "dotfiles": DotfilesPage, "ayuda": HelpPage, "apps": __import__("apps").AppsPage}

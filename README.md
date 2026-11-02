@@ -1,81 +1,100 @@
 # Centro de mando
 
-Panel de control de un solo sitio para el portátil (Lenovo ideapad 100, Debian 13, Openbox).
-PyQt6, tema oscuro con panel lateral por categorías, inspirado en Asere.
+Un solo panel para configurar y vigilar un portátil Linux con escritorio ligero (pensado para
+**Debian 13 + Openbox**, sin gestor de sesión). Hecho con **PyQt6**, tema oscuro, barra lateral por
+categorías y todo en español. La guía de uso completa está en [`AYUDA.md`](AYUDA.md) y también se abre
+dentro de la app con **F1**.
 
-Lanzar: `panel-portatil` (`~/.local/bin/panel-portatil`) o desde el menú de Openbox.
-Reaplicar ajustes de sesión al arrancar (touchpad, teclado, DPMS, temperatura de color):
-`panel-portatil --apply &` en el autostart de Openbox.
+![Resumen](docs/resumen.png)
 
-## Cómo funciona
+## Qué hace
 
-- **Modo acumulado:** los cambios se marcan (borde amarillo) y se aplican juntos con
-  *Aplicar cambios*. Los que necesitan root (candado / borde naranja) van en **una sola**
-  autorización `pkexec`. *Descartar* los anula; al cerrar con cambios pendientes pregunta.
-- **Buscador** (`Ctrl+K`): filtra los ajustes de todas las categorías.
-- **Consola** inferior: registro con hora de cada acción (`▶` inicio, `✓` ok, `✗` error).
-- **Copias de seguridad:** antes de editar `autostart`, `rc.xml`, `picom.conf`, `.tint2rc` o
-  `.conkyrc` se copia el original en `~/.config/panel-portatil/backups/`.
-- **Recargas agrupadas:** varios cambios en tint2/picom/Openbox/conky = una sola recarga.
+- **Resumen gráfico:** medidores (CPU, memoria, temperatura, batería), gráficas de 90 s (CPU+RAM,
+  temperatura, red), disco y alertas.
+- **Ajustes de todo el equipo:** energía (TLP), pantalla, audio, entrada, red, escritorio, ventanas,
+  compositor (picom), barras (tint2), conky, servicios y arranque.
+- **Modo acumulado:** marcas varios cambios y los aplicas juntos; los que necesitan root piden **una
+  sola** contraseña (`pkexec`).
+- **Presets** Ahorro / Equilibrado / Rendimiento con vista previa y reversión.
+- **Apps (AppImage):** todas en `~/Applications`; ejecutar, actualizar (con la papelera como red de
+  seguridad), eliminar y añadir al menú eligiendo la sección.
+- **Disco:** particiones, limpieza de apt/journal y caché por programa con botón de borrado.
+- **Atajos de Openbox** editables, **Dotfiles** (commit/push desde el panel) y **Procesos**.
+- **Bandeja y avisos de escritorio:** batería baja/crítica, CPU caliente, disco lleno y AppImage nuevas.
 
-## Categorías
-
-| Grupo | Páginas |
+| Apps | Ayuda |
 |---|---|
-| General | Resumen (con alertas), Presets (Ahorro / Equilibrado / Rendimiento con vista previa y reversión) |
-| Hardware | Energía (TLP, tapa, DPMS), Pantalla, Audio, Entrada (touchpad, teclado), Batería (salud) |
-| Conectividad | Red, Nube (Drive con rclone) |
-| Personalización | Escritorio, Conky, Barras tint2, Compositor (picom), Ventanas (Openbox), Arranque, Atajos (editables) |
-| Sistema | Servicios, Sistema, Actualizaciones, Disco (limpieza), Procesos, Apps (AppImage), Dotfiles (commit/push) |
+| ![Apps](docs/apps.png) | ![Ayuda](docs/ayuda.png) |
 
-## Archivos
+## Requisitos
+
+Imprescindible: **Python 3.11+** y **PyQt6** (`sudo apt install python3-pyqt6`).
+
+Opcionales (cada ajuste se desactiva solo si falta su programa): `tlp`, `brightnessctl`, `picom`,
+`conky`, `tint2`, `nmcli`, `rfkill`, `wpctl` (PipeWire), `xinput`, `xrandr`, `rclone`, `libnotify-bin`
+(avisos), `policykit-1` con un agente en marcha como `lxpolkit` (acciones de administrador).
+
+## Instalación
+
+```sh
+git clone <url-del-repositorio> ~/panel-portatil
+cd ~/panel-portatil
+./install.sh          # crea el lanzador, el icono y la entrada de menú
+panel-portatil        # o desde el menú: «Centro de mando»
+```
+
+Opciones de línea de comandos:
+
+| Opción | Efecto |
+|---|---|
+| `--tray` | Arranca oculto en la bandeja (para el autostart de Openbox) |
+| `--apply` | Reaplica ajustes de sesión (touchpad, teclado, DPMS, color) y sale |
+
+Desinstalar: `./install.sh --uninstall`.
+
+## Estructura
 
 | Archivo | Contenido |
 |---|---|
-| `panel.py` | Interfaz: ventana, barra lateral, tarjetas, modo acumulado, presets, resumen |
+| `panel.py` | Ventana, barra lateral, tarjetas, modo acumulado, presets, resumen, bandeja |
 | `settings.py` | Clase `S` (un ajuste) y todas las categorías en `build()` / `CATEGORIES` |
-| `deskcfg.py` | Edición segura de autostart, picom, rc.xml, tint2 y conky |
-| `pages.py` | Páginas de información: Batería, Procesos, Atajos, Disco, Actualizaciones |
+| `pages.py` | Páginas de información: Batería, Procesos, Atajos, Disco, Actualizaciones, Dotfiles, Ayuda |
+| `apps.py` | Gestor de AppImage: escaneo, actualización, menú, papelera |
+| `dash.py` | Widgets gráficos del Resumen (`Gauge`, `AreaChart`, `Bar`) |
+| `notify.py` | Avisos de escritorio con histéresis y comprobación periódica de AppImage |
+| `deskcfg.py` | Edición segura de autostart, picom, rc.xml, tint2 y conky (con copia de seguridad) |
 | `root_helper.py` | Operaciones con root, **solo de una lista blanca**, vía `pkexec` |
-| `panel-portatil.svg` | Icono |
+| `AYUDA.md` | Guía de usuario; la muestra la página Ayuda |
+| `install.sh` | Instalador / desinstalador por usuario |
 
-## Añadir cosas
+## Desarrollo
 
-- **Un ajuste:** un `S(id, categoría, título, descripción, tipo, get=…, set=…)` en `settings.py`.
+- **Añadir un ajuste:** un `S(id, categoría, título, descripción, tipo, get=…, set=…)` en `settings.py`.
   Tipos: `toggle`, `choice`, `slider`, `button`. Con `root=lambda v: [[op, …]]` se ejecuta como root.
-- **Una categoría:** una tupla en `CATEGORIES`.
-- **Una página de información:** clase en `pages.py` registrada en `PAGES` (misma clave que la categoría).
-- **Una operación root:** función `op_*` en `root_helper.py` y entrada en `OPS`, validando los argumentos.
+- **Añadir una categoría:** una tupla en `CATEGORIES`.
+- **Añadir una página informativa:** clase en `pages.py` registrada en `PAGES` (misma clave que la categoría).
+- **Añadir una operación root:** función `op_*` en `root_helper.py` y entrada en `OPS`, validando los argumentos.
+- **Probar sin abrir ventana:** `QT_QPA_PLATFORM=offscreen` y `widget.grab().save("captura.png")`.
 
-## Notas
+### Cómo funciona por dentro
 
-- `root_helper.py` es un archivo del usuario que se ejecuta como root: quien pueda editarlo escala
-  privilegios. Para endurecerlo, instalarlo en `/usr/local/lib` con dueño root y una política polkit.
+- Antes de editar `autostart`, `rc.xml`, `picom.conf`, `.tint2rc` o `.conkyrc` se copia el original en
+  `~/.config/panel-portatil/backups/`. Varios cambios en la misma herramienta = una sola recarga.
+- La actualización de AppImage lee la sección ELF `.upd_info` (`gh-releases-zsync` vía API de GitHub, o
+  `zsync|URL` comparando `Length`); descarga a `.nombre.part`, comprueba que sea ELF y solo entonces
+  sustituye. La versión anterior va a la papelera (`gio trash`).
+- Los avisos se evalúan cada 30 s; cada uno salta una vez y se rearma al normalizarse. El resultado de
+  comprobar AppImage se guarda en `~/.config/panel-portatil/app-updates.json`.
+- Estado de sesión en `~/.config/panel-portatil/state.json`; preferencias en `prefs.json`.
 - Los widgets de tarjeta deben tener padre antes de mostrarse (si no, parpadean como ventanas sueltas).
-- Estado de sesión en `~/.config/panel-portatil/state.json`; instantánea del último preset en
-  `preset-snapshot.json`.
+- Nunca usar `pkill -f` con la ruta del script en la propia línea de comandos: mata la shell.
 
-## Resumen gráfico, atajos, dotfiles y bandeja
+## Seguridad
 
-- **Resumen:** cuatro medidores (CPU, memoria, temperatura, batería) y tres gráficas con histórico
-  de 90 s (CPU+RAM, temperatura, red ↓↑), barra de disco y alertas. Widgets en `dash.py`.
-- **Atajos:** añadir, cambiar tecla (se captura pulsándola) y eliminar; edita `rc.xml` con
-  copia de seguridad y `openbox --reconfigure`. La chuleta de conky es un archivo aparte.
-- **Dotfiles:** lista los cambios de `~/dotfiles`, commit solo de lo marcado y push con confirmación.
-- **Bandeja:** icono con tooltip (batería, CPU); clic alterna la ventana; la X solo oculta, *Salir* del
-  menú cierra. Instancia única; `panel-portatil --tray` arranca oculto.
-- **Apps (AppImage):** todas viven en `~/Applications` (`apps.py`). Ejecutar, Comprobar/Actualizar y Eliminar
-  (a la papelera, con su lanzador de menú). La actualización lee la sección ELF `.upd_info` de cada AppImage
-  (`gh-releases-zsync` vía API de GitHub, o `zsync|URL` comparando `Length`); descarga a `.nombre.part`, comprueba
-  que sea ELF y solo entonces sustituye (la versión vieja va a la papelera y se reescriben los `.desktop`).
-  «Traer las dispersas…» mueve los AppImage de otras carpetas (ignora puntos de montaje como ~/Drive).
-- **Menú de las AppImage:** el botón «Añadir al menú…» lee el `.desktop` y el icono del propio AppImage
-  (`--appimage-extract`, sin ejecutarlo), deja elegir nombre y **sección** (Oficina, Desarrollo, Gráficos, Internet,
-  Juegos, Sistema, Multimedia, Utilidades, Ajustes, Ciencia) y crea `~/.local/share/applications/appimage-*.desktop`
-  con una única categoría. Con entrada ya creada, el botón pasa a «Menú…» para cambiarla o quitarla.
-  Para que el menú de Openbox las muestre, `obamenu` (dotfiles) lee también `~/.local/share/applications`.
-- **Avisos de escritorio** (`notify.py`, vía `notify-send`/xfce4-notifyd, con el panel residente en la bandeja):
-  batería baja (≤20 %) y crítica (≤10 %) descargando, CPU ≥85 °C, disco raíz ≥90 % y AppImage con versión nueva.
-  Cada aviso salta una vez y se rearma al normalizarse (histéresis). Las AppImage se comprueban 90 s tras arrancar
-  y cada 12 h; el resultado se guarda en `~/.config/panel-portatil/app-updates.json`, así la página Apps lo
-  recuerda al reabrir. Interruptor «Avisos de escritorio» y «Probar un aviso» en el menú de la bandeja.
+`root_helper.py` se ejecuta como root mediante `pkexec` y solo acepta operaciones de una lista blanca con
+los argumentos validados. Aun así, es un archivo del usuario: **quien pueda editarlo puede escalar
+privilegios**. Para endurecerlo, instálalo en `/usr/local/lib` con dueño root y añade una política polkit.
+
+## Licencia
+
+Sin licencia definida todavía (todos los derechos reservados por defecto).

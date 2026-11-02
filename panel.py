@@ -616,6 +616,7 @@ class Window(QMainWindow):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._search)
         QShortcut(QKeySequence("Ctrl+K"), self, activated=self.search.setFocus)
+        QShortcut(QKeySequence("F1"), self, activated=self.show_help)
         top.addWidget(logo)
         top.addWidget(brand)
         top.addSpacing(40)
@@ -712,6 +713,13 @@ class Window(QMainWindow):
         self.log("Centro de mando iniciado")
 
     # ------------------------------------------------------------- bandeja
+    def show_help(self):
+        """F1: abre la página de Ayuda."""
+        for i in range(self.side.count()):
+            if self.side.item(i).data(Qt.ItemDataRole.UserRole) == "ayuda":
+                self.side.setCurrentRow(i)
+                return
+
     def _tray_setup(self):
         self.tray = None
         if not QSystemTrayIcon.isSystemTrayAvailable():

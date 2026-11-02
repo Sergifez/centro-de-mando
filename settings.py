@@ -534,6 +534,7 @@ CATEGORIES = [
     # (id, nombre, grupo, icono)
     ("resumen", "Resumen", "GENERAL", "◉"),
     ("presets", "Presets", "GENERAL", "☰"),
+    ("ayuda", "Ayuda", "GENERAL", "?"),
     ("energia", "Energía", "HARDWARE", "⚡"),
     ("pantalla", "Pantalla", "HARDWARE", "▭"),
     ("audio", "Audio", "HARDWARE", "♪"),
