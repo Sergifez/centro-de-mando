@@ -714,7 +714,7 @@ class Window(QMainWindow):
         self.tray = None
         if not QSystemTrayIcon.isSystemTrayAvailable():
             return
-        self.tray = QSystemTrayIcon(self.windowIcon(), self)
+        self.tray = QSystemTrayIcon(QIcon(os.path.join(cfg.HERE, "panel-portatil-tray.svg")), self)
         menu = QMenu()
         ic = lambda *names: next((QIcon.fromTheme(n) for n in names if QIcon.hasThemeIcon(n)), QIcon())
         a_open = QAction(self.windowIcon(), "Abrir Centro de mando", menu)
