@@ -20,7 +20,7 @@ import settings as cfg
 
 CSS = """
 * { font-family: 'Noto Sans','DejaVu Sans',sans-serif; font-size: 13px; color: #cfd6de; }
-QToolTip { background: #10151f; color: #e6ebf0; border: 1px solid #3aa8e0; border-radius: 4px; padding: 4px 6px; }
+QToolTip { background: #474d5d; color: #e8ecf1; border: none; border-radius: 4px; padding: 5px 9px; }
 QMainWindow, QDialog { background: #0b0f14; }
 QWidget#sidepanel { background: #10151f; border: 1px solid #1a2230; border-radius: 10px; }
 QListWidget#side { background: transparent; border: none; outline: 0; padding: 4px; }
